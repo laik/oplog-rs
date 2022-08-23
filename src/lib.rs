@@ -1,4 +1,5 @@
 #![warn(missing_docs)]
+#![feature(async_iterator)]
 
 //! A library for iterating over a MongoDB replica set oplog.
 //!
@@ -48,17 +49,13 @@
 //! # }
 //! ```
 
-#[macro_use]
-extern crate bson;
-extern crate mongodb;
-extern crate chrono;
-
 use std::error;
 use std::fmt;
 use std::result;
 
+use mongodb::bson::document::ValueAccessError;
 pub use operation::Operation;
-pub use oplog::{Oplog, OplogBuilder};
+// pub use oplog::{Oplog, OplogBuilder};
 
 mod operation;
 mod oplog;
@@ -70,26 +67,15 @@ pub type Result<T> = result::Result<T, Error>;
 #[derive(Debug)]
 pub enum Error {
     /// A database connectivity error raised by the MongoDB driver.
-    Database(mongodb::Error),
+    Database(mongodb::error::Error),
     /// An error when converting a BSON document to an `Operation` and it has a missing field or
     /// unexpected type.
-    MissingField(bson::ValueAccessError),
+    MissingField(ValueAccessError),
     /// An error when converting a BSON document to an `Operation` and it has an unsupported
     /// operation type.
     UnknownOperation(String),
     /// An error when converting an applyOps command with invalid documents.
     InvalidOperation,
-}
-
-impl error::Error for Error {
-    fn description(&self) -> &str {
-        match *self {
-            Error::Database(ref err) => err.description(),
-            Error::MissingField(ref err) => err.description(),
-            Error::UnknownOperation(_) => "unknown operation type",
-            Error::InvalidOperation => "invalid operation",
-        }
-    }
 }
 
 impl fmt::Display for Error {
@@ -103,14 +89,8 @@ impl fmt::Display for Error {
     }
 }
 
-impl From<bson::ValueAccessError> for Error {
-    fn from(original: bson::ValueAccessError) -> Error {
-        Error::MissingField(original)
-    }
-}
-
-impl From<mongodb::Error> for Error {
-    fn from(original: mongodb::Error) -> Error {
+impl From<mongodb::error::Error> for Error {
+    fn from(original: mongodb::error::Error) -> Error {
         Error::Database(original)
     }
 }

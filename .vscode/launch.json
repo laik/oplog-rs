@@ -1,0 +1,138 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'oplog'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=oplog"
+                ],
+                "filter": {
+                    "name": "oplog",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'printer'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=printer",
+                    "--package=oplog"
+                ],
+                "filter": {
+                    "name": "printer",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'printer'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=printer",
+                    "--package=oplog"
+                ],
+                "filter": {
+                    "name": "printer",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug example 'insert_printer'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=insert_printer",
+                    "--package=oplog"
+                ],
+                "filter": {
+                    "name": "insert_printer",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in example 'insert_printer'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--example=insert_printer",
+                    "--package=oplog"
+                ],
+                "filter": {
+                    "name": "insert_printer",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug example 'printer'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=printer",
+                    "--package=oplog"
+                ],
+                "filter": {
+                    "name": "printer",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in example 'printer'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--example=printer",
+                    "--package=oplog"
+                ],
+                "filter": {
+                    "name": "printer",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

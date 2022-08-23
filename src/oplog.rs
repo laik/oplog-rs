@@ -1,13 +1,9 @@
 //! The oplog module is responsible for building an iterator over a MongoDB replica set oplog with
 //! any optional filtering criteria applied.
 
-use bson::Document;
-use mongodb::coll::options::{FindOptions, CursorType};
-use mongodb::cursor::Cursor;
-use mongodb::db::ThreadedDatabase;
-use mongodb::{Client, ThreadedClient};
-
-use {Operation, Result};
+use mongodb::bson::Document;
+use mongodb::options::{CursorType, FindOptions};
+use mongodb::{Client, Cursor};
 
 /// Oplog represents a MongoDB replica set oplog.
 ///
@@ -19,21 +15,7 @@ use {Operation, Result};
 /// to end.
 pub struct Oplog {
     /// The internal MongoDB cursor for the current position in the oplog.
-    cursor: Cursor,
-}
-
-impl Iterator for Oplog {
-    type Item = Operation;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            match self.cursor.next() {
-                Some(Ok(document)) => return Operation::new(&document).ok(),
-                Some(Err(_)) => return None,
-                None => continue,
-            }
-        }
-    }
+    cursor: Cursor<Document>,
 }
 
 impl Oplog {
@@ -55,8 +37,8 @@ impl Oplog {
     /// }
     /// # }
     /// ```
-    pub fn new(client: &Client) -> Result<Oplog> {
-        OplogBuilder::new(client).build()
+    pub async fn new(client: &Client) -> crate::Result<Oplog> {
+        OplogBuilder::new(client).build().await
     }
 }
 
@@ -101,16 +83,20 @@ impl<'a> OplogBuilder<'a> {
     }
 
     /// Executes the query and builds the `Oplog`.
-    pub fn build(&self) -> Result<Oplog> {
-        let coll = self.client.db("local").collection("oplog.rs");
+    pub async fn build(&self) -> crate::Result<Oplog> {
+        let coll = self.client.database("local").collection("oplog.rs");
 
-        let mut opts = FindOptions::new();
-        opts.cursor_type = CursorType::TailableAwait;
-        opts.no_cursor_timeout = true;
+        let opts = FindOptions::builder()
+            .cursor_type(CursorType::TailableAwait)
+            .no_cursor_timeout(true)
+            .build();
 
-        let cursor = coll.find(self.filter.clone(), Some(opts))?;
+        let cursor = coll
+            .find(self.filter.clone(), opts)
+            .await
+            .map_err(|e| crate::Error::Database(e))?;
 
-        Ok(Oplog { cursor: cursor })
+        Ok(Oplog { cursor })
     }
 
     /// Provide an optional filter for the oplog.
@@ -120,10 +106,6 @@ impl<'a> OplogBuilder<'a> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # #[macro_use]
-    /// # extern crate bson;
-    /// # extern crate mongodb;
-    /// # extern crate oplog;
     /// use mongodb::{Client, ThreadedClient};
     /// use oplog::OplogBuilder;
     ///
