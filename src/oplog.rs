@@ -1,53 +1,56 @@
 //! The oplog module is responsible for building an iterator over a MongoDB replica set oplog with
 //! any optional filtering criteria applied.
 
-use mongodb::bson::Document;
+use async_stream::stream;
+use futures::{pin_mut, Stream, StreamExt, TryStreamExt};
+use mongodb::bson::{doc, Document};
 use mongodb::options::{CursorType, FindOptions};
 use mongodb::{Client, Cursor};
 
-/// Oplog represents a MongoDB replica set oplog.
-///
-/// It implements the `Iterator` trait so it can be iterated over, yielding successive `Operation`s
-/// as they are read from the server. This will effectively iterate forever as it will await new
-/// operations.
-///
-/// Any errors raised while tailing the oplog (e.g. a connectivity issue) will cause the iteration
-/// to end.
 pub struct Oplog {
-    /// The internal MongoDB cursor for the current position in the oplog.
     cursor: Cursor<Document>,
 }
 
 impl Oplog {
-    /// Returns a new `Oplog` for the given MongoDB client with the default options.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # extern crate mongodb;
-    /// # extern crate oplog;
-    /// use mongodb::{Client, ThreadedClient};
-    /// use oplog::Oplog;
-    ///
-    /// # fn main() {
-    /// let client = Client::connect("localhost", 27017).expect("Failed to connect to MongoDB.");
-    ///
-    /// if let Ok(oplog) = Oplog::new(&client) {
-    ///     // Do something with oplog.
-    /// }
-    /// # }
-    /// ```
     pub async fn new(client: &Client) -> crate::Result<Oplog> {
-        OplogBuilder::new(client).build().await
+        let oplog = OplogBuilder::new(client)
+            .filter(Some(doc! {"op":{"$in":["d","u","i"]}}))
+            .build()
+            .await;
+        oplog
+    }
+
+    pub async fn print(&mut self) {
+        loop {
+            match self.cursor.try_next().await {
+                Ok(o) => {
+                    if let Some(o) = o {
+                        println!("{:?}", crate::Operation::new(&o).unwrap())
+                    }
+                }
+                Err(e) => println!("{:?}", e),
+            }
+        }
+    }
+
+    /// iter Example:
+    pub fn stream<'a>(&'a mut self) -> impl Stream<Item = crate::Operation> + 'a {
+        let block = stream! {
+             loop{
+                match self.cursor.try_next().await{
+                    Ok(o) => {
+                        if let Some(o) = o{
+                            yield crate::Operation::new(&o).unwrap()
+                        }
+                    },
+                    Err(e) => println!("{:?}",e),
+                }
+            }
+        };
+        block
     }
 }
 
-/// A builder for an `Oplog`.
-///
-/// This builder enables configuring a filter on the oplog so that only operations matching a given
-/// criteria are returned (e.g. to set a start time or filter out unwanted operation types).
-///
-/// The lifetime `'a` refers to the lifetime of the MongoDB client.
 #[derive(Clone)]
 pub struct OplogBuilder<'a> {
     client: &'a Client,
@@ -55,26 +58,6 @@ pub struct OplogBuilder<'a> {
 }
 
 impl<'a> OplogBuilder<'a> {
-    /// Create a new builder for the given MongoDB client.
-    ///
-    /// The oplog is not built until `build` is called.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # extern crate mongodb;
-    /// # extern crate oplog;
-    /// use mongodb::{Client, ThreadedClient};
-    /// use oplog::OplogBuilder;
-    ///
-    /// # fn main() {
-    /// let client = Client::connect("localhost", 27017).expect("Failed to connect to MongoDB.");
-    ///
-    /// if let Ok(oplog) = OplogBuilder::new(&client).build() {
-    ///     // Do something with oplog.
-    /// }
-    /// # }
-    /// ```
     pub fn new(client: &'a Client) -> OplogBuilder<'a> {
         OplogBuilder {
             client: client,
@@ -82,7 +65,6 @@ impl<'a> OplogBuilder<'a> {
         }
     }
 
-    /// Executes the query and builds the `Oplog`.
     pub async fn build(&self) -> crate::Result<Oplog> {
         let coll = self.client.database("local").collection("oplog.rs");
 
@@ -99,24 +81,6 @@ impl<'a> OplogBuilder<'a> {
         Ok(Oplog { cursor })
     }
 
-    /// Provide an optional filter for the oplog.
-    ///
-    /// This is empty by default so all operations are returned.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use mongodb::{Client, ThreadedClient};
-    /// use oplog::OplogBuilder;
-    ///
-    /// # fn main() {
-    /// let client = Client::connect("localhost", 27017).expect("Failed to connect to MongoDB.");
-    ///
-    /// if let Ok(oplog) = OplogBuilder::new(&client).filter(Some(doc! { "op" => "i" })).build() {
-    ///     // Do something with filtered oplog.
-    /// }
-    /// # }
-    /// ```
     #[allow(dead_code)]
     pub fn filter(&mut self, filter: Option<Document>) -> &mut OplogBuilder<'a> {
         self.filter = filter;

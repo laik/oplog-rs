@@ -1,22 +1,38 @@
-// extern crate mongodb;
-// extern crate oplog;
+use futures::{pin_mut, StreamExt};
+use mongodb::Client;
+use oplog::{Operation, Oplog};
 
-// use mongodb::{Client, ThreadedClient};
-// use oplog::{Operation, Oplog};
+#[tokio::main]
+async fn main() {
+    env_logger::init();
+    let client = Client::with_uri_str("mongodb://127.0.0.1:27017")
+        .await
+        .unwrap();
 
-fn main() {
-//     let client = Client::connect("localhost", 27017).expect("Failed to connect to MongoDB.");
+    let mut oplog = match Oplog::new(&client).await {
+        Ok(it) => it,
+        _ => return,
+    };
 
-//     if let Ok(oplog) = Oplog::new(&client) {
-//         for operation in oplog {
-//             match operation {
-//                 Operation::Noop { timestamp, .. } => println!("No-op at {}", timestamp),
-//                 Operation::Insert { timestamp, .. } => println!("Insert at {}", timestamp),
-//                 Operation::Update { timestamp, .. } => println!("Update at {}", timestamp),
-//                 Operation::Delete { timestamp, .. } => println!("Delete at {}", timestamp),
-//                 Operation::Command { timestamp, .. } => println!("Command at {}", timestamp),
-//                 Operation::ApplyOps { timestamp, .. } => println!("ApplyOps at {}", timestamp),
-//             }
-//         }
-//     }
+    let stream = oplog.stream();
+
+    pin_mut!(stream);
+
+    while let Some(op) = stream.next().await {
+        match op {
+            Operation::Insert {
+                timestamp,
+                document,
+                ..
+            } => println!("Insert at {} {:?}", timestamp, document),
+            Operation::Update {
+                timestamp, document, ..
+            } => println!("Update at {} {:?}", timestamp, document),
+            Operation::Delete {
+                timestamp,
+                document,
+                ..
+            } => println!("Delete at {} {:?}", timestamp, document),
+        }
+    }
 }

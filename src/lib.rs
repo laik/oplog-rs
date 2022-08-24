@@ -49,13 +49,12 @@
 //! # }
 //! ```
 
-use std::error;
 use std::fmt;
 use std::result;
 
 use mongodb::bson::document::ValueAccessError;
 pub use operation::Operation;
-// pub use oplog::{Oplog, OplogBuilder};
+pub use oplog::{Oplog, OplogBuilder};
 
 mod operation;
 mod oplog;
