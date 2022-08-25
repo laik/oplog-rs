@@ -1,60 +1,20 @@
-#![warn(missing_docs)]
+// #![warn(missing_docs)]
 #![feature(async_iterator)]
-
-//! A library for iterating over a MongoDB replica set oplog.
-//!
-//! Given a MongoDB `Client` connected to a replica set, this crate allows you to iterate over an
-//! `Oplog` as if it were a collection of statically typed `Operation`s.
-//!
-//! # Example
-//!
-//! At its most basic, an `Oplog` will yield _all_ operations in the oplog when iterated over:
-//!
-//! ```rust,no_run
-//! # extern crate mongodb;
-//! # extern crate oplog;
-//! use mongodb::{Client, ThreadedClient};
-//! use oplog::Oplog;
-//!
-//! # fn main() {
-//! let client = Client::connect("localhost", 27017).expect("Failed to connect to MongoDB.");
-//!
-//! if let Ok(oplog) = Oplog::new(&client) {
-//!     for operation in oplog {
-//!         // Do something with operation...
-//!     }
-//! }
-//! # }
-//! ```
-//!
-//! Alternatively, an `Oplog` can be built with a filter via `OplogBuilder` to restrict the
-//! operations yielded:
-//!
-//! ```rust,no_run
-//! # #[macro_use]
-//! # extern crate bson;
-//! # extern crate mongodb;
-//! # extern crate oplog;
-//! use mongodb::{Client, ThreadedClient};
-//! use oplog::OplogBuilder;
-//!
-//! # fn main() {
-//! let client = Client::connect("localhost", 27017).expect("Failed to connect to MongoDB.");
-//!
-//! if let Ok(oplog) = OplogBuilder::new(&client).filter(Some(doc! { "op" => "i" })).build() {
-//!     for insert in oplog {
-//!         // Do something with insert operation...
-//!     }
-//! }
-//! # }
-//! ```
 
 use std::fmt;
 use std::result;
 
+use futures::pin_mut;
+use futures::StreamExt;
+use mongodb::bson::doc;
 use mongodb::bson::document::ValueAccessError;
+use mongodb::bson::Document;
+use mongodb::Client;
 pub use operation::Operation;
-pub use oplog::{Oplog, OplogBuilder};
+pub(crate) use oplog::{Oplog, OplogBuilder};
+use serde::de::DeserializeOwned;
+use tokio::sync::mpsc::Receiver;
+use tokio_context::context::Context;
 
 mod operation;
 mod oplog;
@@ -92,4 +52,104 @@ impl From<mongodb::error::Error> for Error {
     fn from(original: mongodb::error::Error) -> Error {
         Error::Database(original)
     }
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub enum Event<T> {
+    Added(T),
+    Updated(T),
+    Deleted(T),
+    Error(String),
+}
+
+impl<T> std::fmt::Display for Event<T>
+where
+    T: std::fmt::Debug + serde::Serialize,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Event::Added(ref t) => write!(
+                f,
+                r#"{{ \"type\": \"ADDED\", \"object\": {:?} }}"#,
+                serde_json::to_string(&t).unwrap()
+            ),
+            Event::Updated(t) => write!(
+                f,
+                r#"{{ \"type\": \"MODIFIED\", \"object\": {:?} }}"#,
+                serde_json::to_string(&t).unwrap()
+            ),
+            Event::Deleted(t) => write!(
+                f,
+                r#"{{ \"type\": \"DELETED\", \"object\": {:?} }}"#,
+                serde_json::to_string(&t).unwrap()
+            ),
+            Event::Error(ref s) => write!(f, r#"{{ \"type\": \"ERROR\", \"msg\": {:?} }}"#, s),
+        }
+    }
+}
+
+pub fn subscribe<'a, T>(
+    ctx: Context,
+    client: Client,
+    ns: &str,
+    coll: &str,
+    filter: Option<Document>,
+) -> Result<Receiver<Event<T>>>
+where
+    T: core::fmt::Debug + DeserializeOwned + Send + Sync + 'static,
+{
+    let ns = format!("{}.{}", ns, coll);
+    let filter = if let Some(mut filter) = filter {
+        filter.insert("ns", ns);
+        filter
+    } else {
+        doc! {"ns":ns}
+    };
+    let (tx, rx) = tokio::sync::mpsc::channel(1024);
+    tokio::spawn(async move {
+        let block = async move {
+            let mut oplog = Oplog::new(&client, filter).await.unwrap();
+
+            let stream = oplog.stream();
+            pin_mut!(stream);
+
+            while let Some(op) = stream.next().await {
+                let evt = match op {
+                    Operation::Insert { document, .. } => {
+                        match mongodb::bson::from_document::<T>(document) {
+                            Ok(t) => Event::Added(t),
+                            Err(e) => Event::Error(e.to_string()),
+                        }
+                    }
+                    Operation::Update { document, .. } => {
+                        match mongodb::bson::from_document::<T>(document) {
+                            Ok(t) => Event::Added(t),
+                            Err(e) => Event::Error(e.to_string()),
+                        }
+                    }
+                    Operation::Delete { document, .. } => {
+                        match mongodb::bson::from_document::<T>(document) {
+                            Ok(t) => Event::Added(t),
+                            Err(e) => Event::Error(e.to_string()),
+                        }
+                    }
+                };
+
+                let _ = tx
+                    .send(evt)
+                    .await
+                    .map_err(|e| log::error!("Error sending event: {}", e));
+            }
+        };
+
+        let mut ctx = ctx;
+        tokio::select! {
+            _= block =>{},
+            _= ctx.done() => {
+                return;
+            },
+        }
+    });
+
+    Ok(rx)
 }
