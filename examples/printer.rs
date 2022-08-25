@@ -1,4 +1,7 @@
-use mongodb::Client;
+use mongodb::{
+    bson::{doc, DateTime, Timestamp},
+    Client,
+};
 use oplog::subscribe;
 use tokio_context::context::Context;
 
@@ -20,7 +23,14 @@ async fn main() {
         .unwrap();
 
     let (ctx, handle) = Context::new();
-    let mut oplog = subscribe::<Gps>(ctx, client, "base", "gps_latest", None).unwrap();
+    let mut oplog = subscribe::<Gps>(
+        ctx,
+        client,
+        "base",
+        "gps_latest",
+        Some(doc! {"ts":{"$gte":Timestamp{time:1661423340,increment:0}}}),
+    )
+    .unwrap();
 
     while let Some(op) = oplog.recv().await {
         println!("{}", op);

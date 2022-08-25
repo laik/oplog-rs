@@ -2,7 +2,7 @@
 //! any optional filtering criteria applied.
 
 use async_stream::stream;
-use futures::{pin_mut, Stream, StreamExt, TryStreamExt};
+use futures::{Stream, TryStreamExt};
 use mongodb::bson::{doc, Document};
 use mongodb::options::{CursorType, FindOptions};
 use mongodb::{Client, Cursor};
