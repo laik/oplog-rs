@@ -123,13 +123,13 @@ where
                     }
                     Operation::Update { document, .. } => {
                         match mongodb::bson::from_document::<T>(document) {
-                            Ok(t) => Event::Added(t),
+                            Ok(t) => Event::Updated(t),
                             Err(e) => Event::Error(e.to_string()),
                         }
                     }
                     Operation::Delete { document, .. } => {
                         match mongodb::bson::from_document::<T>(document) {
-                            Ok(t) => Event::Added(t),
+                            Ok(t) => Event::Deleted(t),
                             Err(e) => Event::Error(e.to_string()),
                         }
                     }
