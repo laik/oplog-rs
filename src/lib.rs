@@ -105,7 +105,7 @@ where
     } else {
         doc! {"ns":ns}
     };
-    let (tx, rx) = tokio::sync::mpsc::channel(1024);
+    let (tx, rx) = tokio::sync::mpsc::channel(4);
     tokio::spawn(async move {
         let block = async move {
             let mut oplog = Oplog::new(&client, filter).await.unwrap();
